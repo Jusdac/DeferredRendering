@@ -240,7 +240,7 @@ void DeferredRenderer::BuildResources()
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
         D3D12_HEAP_FLAG_NONE,
         &texDesc,
-        D3D12_RESOURCE_STATE_COMMON, // 初始状态为渲染目标
+        D3D12_RESOURCE_STATE_COMMON, // 
         &optClearNormal,
         IID_PPV_ARGS(&mNormalMap)));
 
@@ -252,7 +252,7 @@ void DeferredRenderer::BuildResources()
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
         D3D12_HEAP_FLAG_NONE,
         &texDesc,
-        D3D12_RESOURCE_STATE_COMMON, // 初始状态为渲染目标
+        D3D12_RESOURCE_STATE_COMMON, // 
         &optClearAlbedo,
         IID_PPV_ARGS(&mAlbedoMap)));
 

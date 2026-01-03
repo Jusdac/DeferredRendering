@@ -1050,6 +1050,9 @@ void SsaoApp::BuildShadersAndInputLayout()
     mShaders["DeferredRenderingVS"] = d3dUtil::CompileShader(L"Shaders\\DeferredDrawQuad.hlsl", nullptr, "VS", "vs_5_1");
     mShaders["DeferredRenderingPS"] = d3dUtil::CompileShader(L"Shaders\\DeferredDrawQuad.hlsl", nullptr, "PS", "ps_5_1");
 
+    mShaders["GBufferRenderingVS"] = d3dUtil::CompileShader(L"Shaders\\DrawGbuffer.hlsl", nullptr, "VS", "vs_5_1");
+    mShaders["GBufferRenderingPS"] = d3dUtil::CompileShader(L"Shaders\\DrawGbuffer.hlsl", nullptr, "PS", "ps_5_1");
+
     mShaders["shadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadows.hlsl", nullptr, "VS", "vs_5_1");
     mShaders["shadowOpaquePS"] = d3dUtil::CompileShader(L"Shaders\\Shadows.hlsl", nullptr, "PS", "ps_5_1");
     mShaders["shadowAlphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\Shadows.hlsl", alphaTestDefines, "PS", "ps_5_1");
@@ -1060,15 +1063,6 @@ void SsaoApp::BuildShadersAndInputLayout()
     mShaders["drawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "VS", "vs_5_1");
     mShaders["drawNormalsPS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "PS", "ps_5_1");
     
-    mShaders["drawPositionVS"] = d3dUtil::CompileShader(L"Shaders\\DrawPosition.hlsl", nullptr, "VS", "vs_5_1");
-    mShaders["drawPositionPS"] = d3dUtil::CompileShader(L"Shaders\\DrawPosition.hlsl", nullptr, "PS", "ps_5_1");
-  
-    mShaders["drawAlbedoVS"] = d3dUtil::CompileShader(L"Shaders\\DrawAlbedo.hlsl", nullptr, "VS", "vs_5_1");
-    mShaders["drawAlbedoPS"] = d3dUtil::CompileShader(L"Shaders\\DrawAlbedo.hlsl", nullptr, "PS", "ps_5_1");
-
-    mShaders["drawMaterialVS"] = d3dUtil::CompileShader(L"Shaders\\DrawMaterial.hlsl", nullptr, "VS", "vs_5_1");
-    mShaders["drawMaterialPS"] = d3dUtil::CompileShader(L"Shaders\\DrawMaterial.hlsl", nullptr, "PS", "ps_5_1");
-
     mShaders["ssaoVS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "VS", "vs_5_1");
     mShaders["ssaoPS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "PS", "ps_5_1");
 
@@ -1383,6 +1377,41 @@ void SsaoApp::BuildPSOs()
     opaquePsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_EQUAL;
     opaquePsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque"])));
+    
+    //
+    //PSO for gbuffer rendering
+    // 
+    //
+    
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC GBufferPsoDesc = basePsoDesc; // 从基础 PSO 复制
+
+    // 修改顶点着色器为 G-Buffer 的 VS
+    GBufferPsoDesc.VS =
+    {
+        reinterpret_cast<BYTE*>(mShaders["GBufferRenderingVS"]->GetBufferPointer()),
+        mShaders["GBufferRenderingVS"]->GetBufferSize()
+    };
+
+    // 修改像素着色器为 G-Buffer 的 PS
+    GBufferPsoDesc.PS =
+    {
+        reinterpret_cast<BYTE*>(mShaders["GBufferRenderingPS"]->GetBufferPointer()),
+        mShaders["GBufferRenderingPS"]->GetBufferSize()
+    };
+
+    // 设置多渲染目标 (MRT) - 修改 RTV 格式和数量
+    GBufferPsoDesc.NumRenderTargets = 4;
+    GBufferPsoDesc.RTVFormats[0] = DXGI_FORMAT_R32G32B32A32_FLOAT;  //Position
+    GBufferPsoDesc.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;  //Normal
+    GBufferPsoDesc.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM;      //Albedo
+    GBufferPsoDesc.RTVFormats[3] = DXGI_FORMAT_R16G16B16A16_FLOAT;   //Material
+
+    // G-Buffer 渲染通常需要写入深度
+    GBufferPsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; // 确保深度写入开启
+    // DepthFunc 通常保持默认的 LESS_EQUAL 或 LESS，取决于你的深度测试需求，这里保持默认即可
+
+    // 创建 PSO
+    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&GBufferPsoDesc, IID_PPV_ARGS(&mPSOs["GBufferRendering"])));
 
     //
    // PSO for Deferred rendering
@@ -1465,65 +1494,65 @@ void SsaoApp::BuildPSOs()
     drawNormalsPsoDesc.SampleDesc.Quality = 0;
     drawNormalsPsoDesc.DSVFormat = mDepthStencilFormat;
     ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawNormalsPsoDesc, IID_PPV_ARGS(&mPSOs["drawNormals"])));
-    //
-   // PSO for drawing Position.
-   //
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC drawPositionPsoDesc = basePsoDesc;
-    drawPositionPsoDesc.VS =
-    {
-        reinterpret_cast<BYTE*>(mShaders["drawPositionVS"]->GetBufferPointer()),
-        mShaders["drawPositionVS"]->GetBufferSize()
-    };
-    drawPositionPsoDesc.PS =
-    {
-        reinterpret_cast<BYTE*>(mShaders["drawPositionPS"]->GetBufferPointer()),
-        mShaders["drawPositionPS"]->GetBufferSize()
-    };
-    drawPositionPsoDesc.RTVFormats[0] = DeferredRenderer::PositionMapFormat;
-    drawPositionPsoDesc.SampleDesc.Count = 1;
-    drawPositionPsoDesc.SampleDesc.Quality = 0;
-    drawPositionPsoDesc.DSVFormat = mDepthStencilFormat;
-    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawPositionPsoDesc, IID_PPV_ARGS(&mPSOs["drawPosition"])));
+  //  //
+  // // PSO for drawing Position.
+  // //
+  //  D3D12_GRAPHICS_PIPELINE_STATE_DESC drawPositionPsoDesc = basePsoDesc;
+  //  drawPositionPsoDesc.VS =
+  //  {
+  //      reinterpret_cast<BYTE*>(mShaders["drawPositionVS"]->GetBufferPointer()),
+  //      mShaders["drawPositionVS"]->GetBufferSize()
+  //  };
+  //  drawPositionPsoDesc.PS =
+  //  {
+  //      reinterpret_cast<BYTE*>(mShaders["drawPositionPS"]->GetBufferPointer()),
+  //      mShaders["drawPositionPS"]->GetBufferSize()
+  //  };
+  //  drawPositionPsoDesc.RTVFormats[0] = DeferredRenderer::PositionMapFormat;
+  //  drawPositionPsoDesc.SampleDesc.Count = 1;
+  //  drawPositionPsoDesc.SampleDesc.Quality = 0;
+  //  drawPositionPsoDesc.DSVFormat = mDepthStencilFormat;
+  //  ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawPositionPsoDesc, IID_PPV_ARGS(&mPSOs["drawPosition"])));
 
-    //
-  // PSO for drawing Albedo.
-  //
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC drawAlbedoPsoDesc = basePsoDesc;
-    drawAlbedoPsoDesc.VS =
-    {
-        reinterpret_cast<BYTE*>(mShaders["drawAlbedoVS"]->GetBufferPointer()),
-        mShaders["drawAlbedoVS"]->GetBufferSize()
-    };
-    drawAlbedoPsoDesc.PS =
-    {
-        reinterpret_cast<BYTE*>(mShaders["drawAlbedoPS"]->GetBufferPointer()),
-        mShaders["drawAlbedoPS"]->GetBufferSize()
-    };
-    drawAlbedoPsoDesc.RTVFormats[0] = DeferredRenderer::AlbedoMapFormat;
-    drawAlbedoPsoDesc.SampleDesc.Count = 1;
-    drawAlbedoPsoDesc.SampleDesc.Quality = 0;
-    drawAlbedoPsoDesc.DSVFormat = mDepthStencilFormat;
-    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawAlbedoPsoDesc, IID_PPV_ARGS(&mPSOs["drawAlbedo"])));
+  //  //
+  //// PSO for drawing Albedo.
+  ////
+  //  D3D12_GRAPHICS_PIPELINE_STATE_DESC drawAlbedoPsoDesc = basePsoDesc;
+  //  drawAlbedoPsoDesc.VS =
+  //  {
+  //      reinterpret_cast<BYTE*>(mShaders["drawAlbedoVS"]->GetBufferPointer()),
+  //      mShaders["drawAlbedoVS"]->GetBufferSize()
+  //  };
+  //  drawAlbedoPsoDesc.PS =
+  //  {
+  //      reinterpret_cast<BYTE*>(mShaders["drawAlbedoPS"]->GetBufferPointer()),
+  //      mShaders["drawAlbedoPS"]->GetBufferSize()
+  //  };
+  //  drawAlbedoPsoDesc.RTVFormats[0] = DeferredRenderer::AlbedoMapFormat;
+  //  drawAlbedoPsoDesc.SampleDesc.Count = 1;
+  //  drawAlbedoPsoDesc.SampleDesc.Quality = 0;
+  //  drawAlbedoPsoDesc.DSVFormat = mDepthStencilFormat;
+  //  ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawAlbedoPsoDesc, IID_PPV_ARGS(&mPSOs["drawAlbedo"])));
 
-    //
-  // PSO for drawing Material.
-  //
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC drawMaterialPsoDesc = basePsoDesc;
-    drawMaterialPsoDesc.VS =
-    {
-        reinterpret_cast<BYTE*>(mShaders["drawMaterialVS"]->GetBufferPointer()),
-        mShaders["drawMaterialVS"]->GetBufferSize()
-    };
-    drawMaterialPsoDesc.PS =
-    {
-        reinterpret_cast<BYTE*>(mShaders["drawMaterialPS"]->GetBufferPointer()),
-        mShaders["drawMaterialPS"]->GetBufferSize()
-    };
-    drawMaterialPsoDesc.RTVFormats[0] = DeferredRenderer::MaterialMapFormat;
-    drawMaterialPsoDesc.SampleDesc.Count = 1;
-    drawMaterialPsoDesc.SampleDesc.Quality = 0;
-    drawMaterialPsoDesc.DSVFormat = mDepthStencilFormat;
-    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawMaterialPsoDesc, IID_PPV_ARGS(&mPSOs["drawMaterial"])));
+  //  //
+  //// PSO for drawing Material.
+  ////
+  //  D3D12_GRAPHICS_PIPELINE_STATE_DESC drawMaterialPsoDesc = basePsoDesc;
+  //  drawMaterialPsoDesc.VS =
+  //  {
+  //      reinterpret_cast<BYTE*>(mShaders["drawMaterialVS"]->GetBufferPointer()),
+  //      mShaders["drawMaterialVS"]->GetBufferSize()
+  //  };
+  //  drawMaterialPsoDesc.PS =
+  //  {
+  //      reinterpret_cast<BYTE*>(mShaders["drawMaterialPS"]->GetBufferPointer()),
+  //      mShaders["drawMaterialPS"]->GetBufferSize()
+  //  };
+  //  drawMaterialPsoDesc.RTVFormats[0] = DeferredRenderer::MaterialMapFormat;
+  //  drawMaterialPsoDesc.SampleDesc.Count = 1;
+  //  drawMaterialPsoDesc.SampleDesc.Quality = 0;
+  //  drawMaterialPsoDesc.DSVFormat = mDepthStencilFormat;
+  //  ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&drawMaterialPsoDesc, IID_PPV_ARGS(&mPSOs["drawMaterial"])));
 
     //
     // PSO for SSAO.
@@ -1900,93 +1929,69 @@ void SsaoApp::DrawGBuffer()
     auto MaterialMap = mDeferredRenderer->MaterialMap();
     auto MaterialMapRtv = mDeferredRenderer->MaterialMapRtv();
 
-    // Nromal
-    //******
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(normalMap,
-        D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET));
+    // 1. 设置所有 G-Buffer 纹理从 GENERIC_READ 到 RENDER_TARGET 的状态转换
+    // 使用一个数组来简化操作
+    ID3D12Resource* gbufferResources[] = { PositionMap, normalMap, AlbedoMap, MaterialMap };
+    CD3DX12_RESOURCE_BARRIER barriers[4];
+    for (int i = 0; i < 4; ++i)
+    {
+        barriers[i] = CD3DX12_RESOURCE_BARRIER::Transition(
+            gbufferResources[i],
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            D3D12_RESOURCE_STATE_RENDER_TARGET
+        );
+    }
+    mCommandList->ResourceBarrier(4, barriers);
 
-    // Clear the screen normal map and depth buffer.
-    float clearValue[] = { 0.0f, 0.0f, 1.0f, 0.0f };
-    mCommandList->ClearRenderTargetView(normalMapRtv, clearValue, 0, nullptr);
+    // 2. 清除所有 G-Buffer RTV 和 DSV
+    // Position Buffer Clear Value (e.g., (0, 0, 0, 1) or world space coordinates if applicable)
+    float clearValuePosition[] = { 0.0f, 0.0f, 0.0f, 1.0f }; // 或者根据你的需求设置
+    mCommandList->ClearRenderTargetView(PositionMapRtv, clearValuePosition, 0, nullptr);
+
+    // Normal Buffer Clear Value (e.g., (0, 0, 1, 0) for default normal facing camera)
+    float clearValueNormal[] = { 0.0f, 0.0f, 1.0f, 0.0f };
+    mCommandList->ClearRenderTargetView(normalMapRtv, clearValueNormal, 0, nullptr);
+
+    // Albedo Buffer Clear Value (e.g., (0, 0, 0, 1) for black with full alpha)
+    float clearValueAlbedo[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    mCommandList->ClearRenderTargetView(AlbedoMapRtv, clearValueAlbedo, 0, nullptr);
+
+    // Material Buffer Clear Value (e.g., (0, 0, 0, 0) for default FresnelR0 and Shininess)
+    float clearValueMaterial[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    mCommandList->ClearRenderTargetView(MaterialMapRtv, clearValueMaterial, 0, nullptr);
+
+    // Clear Depth/Stencil Buffer
     mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
-    // Specify the buffers we are going to render to.
-    mCommandList->OMSetRenderTargets(1, &normalMapRtv, true, &DepthStencilView());
+    // 3. 设置 MRT - 一次性绑定所有 4 个 RTV
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandles[4];
+    rtvHandles[0] = PositionMapRtv; // 对应 SV_Target0
+    rtvHandles[1] = normalMapRtv;   // 对应 SV_Target1
+    rtvHandles[2] = AlbedoMapRtv;   // 对应 SV_Target2
+    rtvHandles[3] = MaterialMapRtv; // 对应 SV_Target3
 
-    // Bind the constant buffer for this pass.
+    mCommandList->OMSetRenderTargets(4, rtvHandles, TRUE, &DepthStencilView()); // TRUE 表示同时清除所有 RTV
+
+    // 4. 设置根签名和常量缓冲区
     auto passCB = mCurrFrameResource->PassCB->Resource();
     mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
-    mCommandList->SetPipelineState(mPSOs["drawNormals"].Get());
+    // 5. 设置新的 G-Buffer PSO
+    mCommandList->SetPipelineState(mPSOs["GBufferRendering"].Get()); // 使用你创建的新 PSO
 
+    // 6. 绘制所有不透明物体
     DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
 
-    // Change back to GENERIC_READ so we can read the texture in a shader.
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(normalMap,
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ));
-
-    // Position
-   //******
-    
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(PositionMap,
-        D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET));
-    // Clear the screen normal map and depth buffer.re
-    mCommandList->ClearRenderTargetView(PositionMapRtv, clearValue, 0, nullptr);
-    mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-    // Specify the buffers we are going to render to.
-    mCommandList->OMSetRenderTargets(1, &PositionMapRtv, true, &DepthStencilView());
-
-    mCommandList->SetPipelineState(mPSOs["drawPosition"].Get());
-
-    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
-
-    // Change back to GENERIC_READ so we can read the texture in a shader.
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(PositionMap,
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ));
-
-    // Albedo
-  //******
-
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(AlbedoMap,
-        D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET));
-    // Clear the screen normal map and depth buffer.re
-    mCommandList->ClearRenderTargetView(AlbedoMapRtv, clearValue, 0, nullptr);
-    mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-    // Specify the buffers we are going to render to.
-    mCommandList->OMSetRenderTargets(1, &AlbedoMapRtv, true, &DepthStencilView());
-
-    mCommandList->SetPipelineState(mPSOs["drawAlbedo"].Get());
-
-    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
-
-    // Change back to GENERIC_READ so we can read the texture in a shader.
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(AlbedoMap,
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ));
-
-
-    // Material
-  //******
-
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(MaterialMap,
-        D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET));
-    // Clear the screen normal map and depth buffer.re
-    mCommandList->ClearRenderTargetView(MaterialMapRtv, clearValue, 0, nullptr);
-    mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-    // Specify the buffers we are going to render to.
-    mCommandList->OMSetRenderTargets(1, &MaterialMapRtv, true, &DepthStencilView());
-
-    mCommandList->SetPipelineState(mPSOs["drawMaterial"].Get());
-
-    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
-
-    // Change back to GENERIC_READ so we can read the texture in a shader.
-    mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(MaterialMap,
-        D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ));
-
-
+    // 7. 将所有 G-Buffer 纹理状态转换回 GENERIC_READ，以便后续着色器可以读取它们
+    for (int i = 0; i < 4; ++i)
+    {
+        barriers[i] = CD3DX12_RESOURCE_BARRIER::Transition(
+            gbufferResources[i],
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_GENERIC_READ
+        );
+    }
+    mCommandList->ResourceBarrier(4, barriers);
 }
 
 CD3DX12_CPU_DESCRIPTOR_HANDLE SsaoApp::GetCpuSrv(int index)const
