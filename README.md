@@ -14,12 +14,17 @@ DX12
 我使用 MSI Afterburner 对比了优化前后的性能表现。以下是关键指标对比：
 
 指标	     原始版本（无 MRT）	  优化后（启用 MRT）	      提升
+
 GPU使用率	   平均 ~37%	          平均 ~45%	           +21.6%
+
 显存占用	     最高 1273 MB	        最高 1273 MB	        相同
+
 核心频率	     峰值 ~1234 MHz	     峰值 ~1224 MHz	       几乎持平
+
 显存频率	     峰值 ~8501 MHz	     峰值 ~8501 MHz	        几乎持平
 
  优化成果总结
+ 
 ✅ 减少 3 次 OMSetRenderTargets 调用，降低 CPU 开销。
 
 ✅ 避免多次 ResourceBarrier，提升 GPU 执行流畅度。
